@@ -5,6 +5,8 @@ __pycache__/
 
 # C extensions
 *.so
+# credentials
+BANA 6620\Final_RAG_Model\RAG_Model\credentials.yml
 
 # Distribution / packaging
 .Python
