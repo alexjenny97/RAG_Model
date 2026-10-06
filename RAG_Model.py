@@ -1,134 +1,171 @@
-from langchain_chroma import Chroma
+import os
+import yaml
+import warnings
 
-from langchain_core.runnables import RunnablePassthrough
+# Suppress LangChain deprecation warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+from langchain_chroma import Chroma
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_openai import ChatOpenAI
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_openai import OpenAIEmbeddings
 
-import pandas as pd
-import yaml
-from pprint import pprint
-import os
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_community.document_loaders import DataFrameLoader
-from langchain_community.document_loaders import  Docx2txtLoader
-from langchain_text_splitters import CharacterTextSplitter, RecursiveCharacterTextSplitter
+# Document Loaders
+from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader
 from langchain_community.document_loaders.excel import UnstructuredExcelLoader
-from langchain_ollama import OllamaEmbeddings
-from langchain_community.document_loaders import DirectoryLoader, TextLoader
-from msoffcrypto import OfficeFile
-os.environ["OPENAI_API_KEY"] = yaml.safe_load(open('credentials.yml'))['openai']
-question = ""
+
+# ==============================================================================
+# 1. PATH CONFIGURATION & CREDENTIALS
+# ==============================================================================
+# Resolves paths relative to the directory where RAG_Model.py is located
+BASE_DATA_DIR = os.path.dirname(os.path.abspath(__file__))
+credentials_path = os.path.join(BASE_DATA_DIR, 'credentials.yml')
+
+# Load OpenAI API Key from credentials.yml
+if os.path.exists(credentials_path):
+    with open(credentials_path, 'r') as f:
+        credentials = yaml.safe_load(f)
+        if credentials and 'openai' in credentials:
+            os.environ["OPENAI_API_KEY"] = credentials['openai']
+            print(">>> Successfully loaded OPENAI_API_KEY from credentials.yml")
+        else:
+            raise KeyError("Key 'openai' missing from credentials.yml!")
+else:
+    raise FileNotFoundError(
+        f"Could not find 'credentials.yml' at: {credentials_path}\n"
+        "Please ensure credentials.yml is in the same folder as RAG_Model.py."
+    )
+
+# ==============================================================================
+# 2. DOCUMENT LOADING FUNCTIONS
+# ==============================================================================
 def get_4YearPlans():
     year_plans = []
-    for file in os.scandir("C:/Users/alexj/OneDrive/Desktop/Data Analytics Masters/BANA 6620/Final_RAG_Model/RAG_Model/4-Year_Plans_2024-25"):
-        loader = Docx2txtLoader("C:/Users/alexj/OneDrive/Desktop/Data Analytics Masters/BANA 6620/Final_RAG_Model/RAG_Model/4-Year_Plans_2024-25/" + str(file.name))
-        documents = loader.load()
-        year_plans.append(documents[0].page_content)
+    folder_path = os.path.join(BASE_DATA_DIR, "4-Year_Plans_2024-25")
+    if os.path.exists(folder_path):
+        for entry in os.scandir(folder_path):
+            if entry.name.endswith(".docx"):
+                loader = Docx2txtLoader(entry.path)
+                docs = loader.load()
+                if docs:
+                    year_plans.append(docs[0].page_content)
+    print(f"Loaded {len(year_plans)} 4-Year Plan document(s).")
     return year_plans
 
 def get_catalog():
     catalog = []
-    for file in os.scandir("C:/Users/alexj/OneDrive/Desktop/Data Analytics Masters/BANA 6620/Final_RAG_Model/RAG_Model/Business_Course_Catalog_Descriptions"):
-        loader = Docx2txtLoader("C:/Users/alexj/OneDrive/Desktop/Data Analytics Masters/BANA 6620/Final_RAG_Model/RAG_Model/Business_Course_Catalog_Descriptions/" + str(file.name))
-        documents = loader.load()
-        catalog.append(documents[0].page_content)
+    folder_path = os.path.join(BASE_DATA_DIR, "Business_Course_Catalog_Descriptions")
+    if os.path.exists(folder_path):
+        for entry in os.scandir(folder_path):
+            if entry.name.endswith(".docx"):
+                loader = Docx2txtLoader(entry.path)
+                docs = loader.load()
+                if docs:
+                    catalog.append(docs[0].page_content)
+    print(f"Loaded {len(catalog)} Catalog document(s).")
     return catalog
 
 def get_templates():
     templates = []
-    for file in os.scandir("C:/Users/alexj/OneDrive/Desktop/Data Analytics Masters/BANA 6620/Final_RAG_Model/RAG_Model/Degree Plan Templates"):
-        loader = UnstructuredExcelLoader("C:/Users/alexj/OneDrive/Desktop/Data Analytics Masters/BANA 6620/Final_RAG_Model/RAG_Model/Degree Plan Templates/" + str(file.name))
-        documents = loader.load()
-        templates.append(documents[0].page_content)
+    folder_path = os.path.join(BASE_DATA_DIR, "Degree Plan Templates")
+    if os.path.exists(folder_path):
+        for entry in os.scandir(folder_path):
+            if entry.name.endswith(('.xlsx', '.xls')):
+                loader = UnstructuredExcelLoader(entry.path)
+                docs = loader.load()
+                if docs:
+                    templates.append(docs[0].page_content)
+    print(f"Loaded {len(templates)} Template document(s).")
     return templates
 
 def get_classes():
     classes = []
-    for file in os.scandir("C:/Users/alexj/OneDrive/Desktop/Data Analytics Masters/BANA 6620/Final_RAG_Model/RAG_Model/Fall_2005_Class_List"):
-        loader = UnstructuredExcelLoader("C:/Users/alexj/OneDrive/Desktop/Data Analytics Masters/BANA 6620/Final_RAG_Model/RAG_Model/Fall_2005_Class_List/" + str(file.name))
-        documents = loader.load()
-        classes.append(documents[0].page_content)
+    folder_path = os.path.join(BASE_DATA_DIR, "Fall_2005_Class_List")
+    if os.path.exists(folder_path):
+        for entry in os.scandir(folder_path):
+            if entry.name.endswith(('.xlsx', '.xls')):
+                loader = UnstructuredExcelLoader(entry.path)
+                docs = loader.load()
+                if docs:
+                    classes.append(docs[0].page_content)
+    print(f"Loaded {len(classes)} Class list document(s).")
     return classes
 
 def get_minors():
     minors = []
-    for file in os.scandir("C:/Users/alexj/OneDrive/Desktop/Data Analytics Masters/BANA 6620/Final_RAG_Model/RAG_Model/Minors"):
-        loader = PyPDFLoader("C:/Users/alexj/OneDrive/Desktop/Data Analytics Masters/BANA 6620/Final_RAG_Model/RAG_Model/Minors/" + str(file.name))
-        documents = loader.load()
-        minors.append(documents[0].page_content)
+    folder_path = os.path.join(BASE_DATA_DIR, "Minors")
+    if os.path.exists(folder_path):
+        for entry in os.scandir(folder_path):
+            if entry.name.endswith(".pdf"):
+                loader = PyPDFLoader(entry.path)
+                docs = loader.load()
+                if docs:
+                    minors.append(docs[0].page_content)
+    print(f"Loaded {len(minors)} Minor document(s).")
     return minors
 
-def vector_chroma_db(question):
-    year_plan = get_4YearPlans()
-    catalog = get_catalog()
-    all_docs = year_plan
-    for x in catalog:
-        all_docs.append(x)
-    template = get_templates()
-    print("year plan and catalog done")
-    for x in template:
-        all_docs.append(x)
-    classes = get_classes()
-    print("template done")
-    for x in classes:
-        all_docs.append(x)
-    print("classes done")
+# ==============================================================================
+# 3. CHROMA VECTOR STORE & RETRIEVER CREATION
+# ==============================================================================
+def vector_chroma_db(question=""):
+    all_docs = []
+    all_docs.extend(get_4YearPlans())
+    all_docs.extend(get_catalog())
+    all_docs.extend(get_templates())
+    all_docs.extend(get_classes())
+    all_docs.extend(get_minors())
 
-    # minors = get_minors()
-    # for x in minors:
-    #             all_docs.append(x)
+    # Safety Check: Prevent Chroma crashing on empty documents
+    if not all_docs:
+        raise ValueError(
+            f"No text content could be extracted from: '{BASE_DATA_DIR}'. "
+            "Please check that your folder names match the function definitions."
+        )
 
-    # # Text Splitting
-
+    # Text Splitting
     CHUNK_SIZE = 1000
-    # Recursive Character Splitter: Uses "smart" splitting, and recursively tries to split until text is small enough
-    text_splitter_recursive = RecursiveCharacterTextSplitter(
-    chunk_size = CHUNK_SIZE,
-    chunk_overlap=100,
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=100,
     )
-    docs__recursive = text_splitter_recursive.create_documents(all_docs)
-    # Text Embeddings
-    embedding_function = OllamaEmbeddings(model="mxbai-embed-large")
+    docs_recursive = text_splitter.create_documents(all_docs)
 
-    documents = docs__recursive
-    # Creates a sqlite database called vector_store.db
+    # Text Embeddings & Persistent Chroma Store
+    embedding_function = OpenAIEmbeddings(model="text-embedding-3-small")
+    
+    persist_dir = os.path.join(BASE_DATA_DIR, "data", "chroma_openai_vectorstore")
+    
     vectorstore = Chroma.from_documents(
-        documents, 
+        docs_recursive, 
         embedding=embedding_function, 
-        persist_directory="data/chroma_social_media_strategies_9-20-2025"
+        persist_directory=persist_dir,
+        collection_name="cleo_advising"
     )
 
+    return vectorstore.as_retriever(search_kwargs={"k": 5})
 
-    # Similarity Search
-    result = vectorstore.similarity_search(question, k = 5)
-    retriever = vectorstore.as_retriever()
-
-    return retriever
-
-#  2.0 USE THE RETRIEVER TO AUGMENT AN LLM
-
-# * Prompt template
-template = """Answer the question based only on the following context:
+# ==============================================================================
+# 4. EXECUTION / TEST PIPELINE
+# ==============================================================================
+if __name__ == "__main__":
+    template = """Answer the question based only on the following context:
 {context}
 
 Question: {question}
 """
+    prompt = ChatPromptTemplate.from_template(template)
+    model = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.0)
 
-prompt = ChatPromptTemplate.from_template(template)
+    question = "What are the classes for a Human resources management major in year 3?"
+    
+    retriever = vector_chroma_db(question)
+    docs = retriever.invoke(question)
+    context_text = "\n\n".join([doc.page_content for doc in docs])
 
-# new code
-model = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.0)
+    chain = prompt | model | StrOutputParser()
+    result = chain.invoke({"context": context_text, "question": question})
 
-rag_chain = (
-    {"context": vector_chroma_db(question), "question": RunnablePassthrough()} # here is why Runnable Passthrough is needed when retriver is used
-    | prompt
-    | model
-    | StrOutputParser()
-)
-
-result = rag_chain.invoke(
-    "What are the classes for a Human resources management major in year 3?"
-)
-
-print(result)
+    print("\n--- Final Answer ---")
+    print(result)
